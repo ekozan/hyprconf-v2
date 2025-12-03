@@ -97,6 +97,15 @@ installable_pkgs=(
     parallel
 )
 
+installable_fonts=(
+    ttf-font-awesome
+    ttf-cascadia-code-nerd
+    ttf-jetbrains-mono-nerd
+    ttf-meslo-nerd
+    noto-fonts
+    noto-fonts-emoji
+)
+
 install() {
     local pkg=${1}
 
@@ -120,7 +129,16 @@ done
 
 sleep 2 && clear
 
+for fonts in "${installable_fonts[@]}"; do
+    if sudo pacman -Q "$fonts" &> /dev/null || rpm -q "$fonts" &> /dev/null || sudo zypper se -i "$fonts" &> /dev/null; then
+        msg dn "Everything is fine. Proceeding to the next step"
+    else
+        msg att "Need to install $pkg. It's important."
+        install "$fonts" &> /dev/null
+    fi
+done
 
+sleep 2 && clear
 # Directories ----------------------------
 hypr_dir="$HOME/.config/hypr"
 scripts_dir="$hypr_dir/scripts"
