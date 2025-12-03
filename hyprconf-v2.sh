@@ -102,6 +102,7 @@ skip_installed() {
     fi
 }
 
+aur_helper=$(command -v yay || command -v paru) # find the aur helper
 
 # package installation function..
 install_package() {
