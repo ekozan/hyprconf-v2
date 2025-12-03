@@ -15,7 +15,7 @@ clear
 
 # fn for git actions
 _git_clone() {
-    git clone --depth=1 https://github.com/shell-ninja/hyprconf-v2.git ~/.cache/hyprconf-v2 &> /dev/null
+    git clone --depth=1 https://github.com/ekozan/hyprconf-v2.git ~/.cache/hyprconf-v2 &> /dev/null
 }
 
 # fn for the process
