@@ -27,97 +27,136 @@ printf " \n \n"
 
 ###------ Startup ------###
 
-# finding the presend directory and log file
-# dir="$(dirname "$(realpath "$0")")"
-dir=`pwd`
-# log directory
+### === Chemins & log ===========================================
+dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 log_dir="$dir/Logs"
-log="$dir/Logs/hyprconf-v2.log"
+log="$log_dir/hyprconf-v2.log"
 mkdir -p "$log_dir"
 touch "$log"
 
-# message prompts
+### === Couleurs (adapte si tu les as déjà ailleurs) ============
+green='\033[0;32m'
+orange='\033[0;33m'
+cyan='\033[0;36m'
+yellow='\033[1;33m'
+blue='\033[0;34m'
+magenta='\033[0;35m'
+red='\033[0;31m'
+end='\033[0m'
+
+### === Messages =================================================
 msg() {
     local actn=$1
     local msg=$2
 
     case $actn in
-        act)
-            printf "${green}=>${end} $msg\n"
-            ;;
-        ask)
-            printf "${orange}??${end} $msg\n"
-            ;;
-        dn)
-            printf "${cyan}::${end} $msg\n\n"
-            ;;
-        att)
-            printf "${yellow}!!${end} $msg\n"
-            ;;
-        nt)
-            printf "${blue}\$\$${end} $msg\n"
-            ;;
-        skp)
-            printf "${magenta}[ SKIP ]${end} $msg\n"
-            ;;
+        act) printf "${green}=>${end} %s\n" "$msg" ;;
+        ask) printf "${orange}??${end} %s\n" "$msg" ;;
+        dn)  printf "${cyan}::${end} %s\n\n" "$msg" ;;
+        att) printf "${yellow}!!${end} %s\n" "$msg" ;;
+        nt)  printf "${blue}\$\$${end} %s\n" "$msg" ;;
+        skp) printf "${magenta}[ SKIP ]${end} %s\n" "$msg" ;;
         err)
-            printf "${red}>< Ohh sheet! an error..${end}\n   $msg\n"
+            printf "${red}>< Ohh sheet! an error..${end}\n   %s\n" "$msg"
             sleep 1
             ;;
-        *)
-            printf "$msg\n"
-            ;;
+        *) printf "%s\n" "$msg" ;;
     esac
 }
 
+### === Détection du gestionnaire de paquets =====================
+PKG_MGR=""
+if command -v pacman &>/dev/null; then
+    PKG_MGR="pacman"
+elif command -v dnf &>/dev/null; then
+    PKG_MGR="dnf"
+elif command -v zypper &>/dev/null; then
+    PKG_MGR="zypper"
+else
+    msg err "Aucun gestionnaire de paquets supporté trouvé (pacman/dnf/zypper)."
+    exit 1
+fi
 
-install() {
-    local pkg=${1}
+### === AUR helper (Arch seulement) =============================
+aur_helper=""
 
-    if command -v pacman &> /dev/null; then
-        sudo pacman -S --noconfirm $1
-    elif command -v dnf &> /dev/null; then
-        sudo dnf install $1 -y
-    elif command -v zypper &> /dev/null; then
-        sudo zypper in $1 -y
+if [[ "$PKG_MGR" == "pacman" ]]; then
+    aur_helper="$(command -v yay || command -v paru || true)"
+
+    if [[ -z "$aur_helper" ]]; then
+        msg act "Installation de yay (AUR helper)..."
+        sudo pacman -S --needed --noconfirm git base-devel
+        tmp_dir="$(mktemp -d)"
+        git clone https://aur.archlinux.org/yay-bin.git "$tmp_dir/yay-bin"
+        cd "$tmp_dir/yay-bin"
+        makepkg -si --noconfirm
+        cd - >/dev/null
+        aur_helper="$(command -v yay || command -v paru || true)"
     fi
+fi
+
+### === Fonctions utilitaires ====================================
+is_installed() {
+    local pkg="$1"
+
+    case "$PKG_MGR" in
+        pacman)
+            # on teste d'abord pacman, puis éventuellement l’aur helper
+            if pacman -Q "$pkg" &>/dev/null; then
+                return 0
+            fi
+            if [[ -n "$aur_helper" ]] && "$aur_helper" -Q "$pkg" &>/dev/null; then
+                return 0
+            fi
+            ;;
+        dnf)
+            rpm -q "$pkg" &>/dev/null && return 0
+            ;;
+        zypper)
+            zypper se -i "$pkg" 2>/dev/null | grep -q "^i. *$pkg" && return 0
+            ;;
+    esac
+
+    return 1
 }
-aur_helper=$(command -v yay || command -v paru) # find the aur helper
 
-sudo pacman -S --needed git base-devel
-git clone https://aur.archlinux.org/yay-bin.git
-cd yay-bin
-makepkg -si
+install_pkg() {
+    local pkg="$1"
 
-# skip already insalled packages
-skip_installed() {
-
-    [[ -z "$installed_cache" ]] && touch "$installed_cache"
-
-    if "$aur_helper" -Q "$1" &> /dev/null; then
-        msg skp "$1 is already installed. Skipping..." && sleep 0.1
-        if ! grep -qx "$1" "$installed_cache"; then
-            echo "$1" >> "$installed_cache"
-        fi
+    if is_installed "$pkg"; then
+        msg skp "$pkg est déjà installé. On passe."
+        return
     fi
-}
 
-aur_helper=$(command -v yay || command -v paru) # find the aur helper
+    msg act "Installation de $pkg..."
 
-# package installation function..
-install_package() {
+    case "$PKG_MGR" in
+        pacman)
+            if [[ -n "$aur_helper" ]]; then
+                "$aur_helper" -S --noconfirm "$pkg" >/dev/null 2>&1 || true
+            else
+                sudo pacman -S --noconfirm "$pkg" >/dev/null 2>&1 || true
+            fi
+            ;;
+        dnf)
+            sudo dnf install -y "$pkg" >/dev/null 2>&1 || true
+            ;;
+        zypper)
+            sudo zypper in -y "$pkg" >/dev/null 2>&1 || true
+            ;;
+    esac
 
-    msg act "Installing $1..."
-    "$aur_helper" -S --noconfirm "$1" &> /dev/null
-
-    if "$aur_helper" -Q "$1" &> /dev/null; then
-        msg dn "$1 was installed successfully!"
+    if is_installed "$pkg"; then
+        msg dn "$pkg a été installé avec succès !"
+        printf "[ DONE ] - %s was installed successfully!\n" "$pkg" | tee -a "$log" >/dev/null
     else
-        msg err "$1 failed to install. Maybe therer is an issue..."
+        msg err "$pkg a échoué à l'installation."
+        printf "[ ERROR ] - Sorry, could not install %s!\n" "$pkg" | tee -a "$log" >/dev/null
     fi
 }
 
-# Need to install 2 packages (gum and parallel)________________________
+### === Listes de paquets ========================================
+
 installable_pkgs=(
     gum
     parallel
@@ -131,6 +170,7 @@ installable_fonts=(
     noto-fonts
     noto-fonts-emoji
 )
+
 _hypr=(
     hyprland
     hyprlock
@@ -139,7 +179,6 @@ _hypr=(
     # hyprpolkitagent
 )
 
-# any other packages will be installed from here
 other_packages=(
     btop
     curl
@@ -166,7 +205,7 @@ other_packages=(
     pacman-contrib
     pamixer
     pavucontrol
-    parallel
+    parallel        # doublon géré par la dédup plus bas
     pciutils
     polkit-kde-agent
     power-profiles-daemon
@@ -210,39 +249,32 @@ dolphin=(
     okular
 )
 
+### === Installation ==============================================
+
 printf "\n\n"
 
-for pkg in "${installable_pkgs[@]}"; do
-    if sudo pacman -Q "$pkg" &> /dev/null || rpm -q "$pkg" &> /dev/null || sudo zypper se -i "$pkg" &> /dev/null; then
-        msg dn "Everything is fine. Proceeding to the next step"
-    else
-        msg att "Need to install $pkg. It's important."
-        install "$pkg" &> /dev/null
+# On fusionne tout dans une seule liste
+all_pkgs=(
+    "${installable_pkgs[@]}"
+    "${installable_fonts[@]}"
+    "${_hypr[@]}"
+    "${other_packages[@]}"
+    "${aur_packages[@]}"
+    "${dolphin[@]}"
+)
+
+# Déduplication pour éviter les installations doubles
+declare -A seen
+for pkg in "${all_pkgs[@]}"; do
+    # si déjà vu, on skip
+    if [[ -n "${seen[$pkg]:-}" ]]; then
+        continue
     fi
+    seen["$pkg"]=1
+    install_pkg "$pkg"
 done
 
-for _pkgs in  "${installable_fonts[@]}" "${_hypr[@]}" "${other_packages[@]}" "${aur_packages[@]}" "${dolphin[@]}"; do
-    install_package "$_pkgs"
-    if sudo pacman -Q "$_pkgs" &>/dev/null; then
-        echo "[ DONE ] - $_pkgs was installed successfully!\n" 2>&1 | tee -a "$log" &>/dev/null
-    else
-        echo "[ ERROR ] - Sorry, could not install $_pkgs!\n" 2>&1 | tee -a "$log" &>/dev/null
-    fi
-done
-
-
-
-sleep 2 && clear
-
-for fonts in "${installable_fonts[@]}"; do
-    if sudo pacman -Q "$fonts" &> /dev/null || rpm -q "$fonts" &> /dev/null || sudo zypper se -i "$fonts" &> /dev/null; then
-        msg dn "Everything is fine. Proceeding to the next step"
-    else
-        msg att "Need to install $pkg. It's important."
-        install "$fonts" &> /dev/null
-    fi
-done
-
+msg dn "Toutes les installations sont terminées."
 sleep 2 && clear
 # Directories ----------------------------
 hypr_dir="$HOME/.config/hypr"
