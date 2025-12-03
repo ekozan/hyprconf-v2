@@ -182,30 +182,6 @@ done
 
 sleep 1
 
-
-####################################################################
-
-_____ if OpenBangla Keyboard is installed
-keyboard_path="/usr/share/openbangla-keyboard"
-
-if [[ -d "$keyboard_path" ]]; then
-    msg act "Setting up OpenBangla-Keyboard..."
-
-    # Add fcitx5 environment variables to /etc/environment if not already present
-    if ! grep -q "GTK_IM_MODULE=fcitx" /etc/environment; then
-        printf "\nGTK_IM_MODULE=fcitx\n" | sudo tee -a /etc/environment 2>&1 | tee -a >(sed 's/\x1B\[[0-9;]*[JKmsu]//g' >> "$log") &> /dev/null
-    fi
-
-    if ! grep -q "QT_IM_MODULE=fcitx" /etc/environment; then
-        printf "QT_IM_MODULE=fcitx\n" | sudo tee -a /etc/environment 2>&1 | tee -a >(sed 's/\x1B\[[0-9;]*[JKmsu]//g' >> "$log") &> /dev/null
-    fi
-
-    if ! grep -q "XMODIFIERS=@im=fcitx" /etc/environment; then
-        printf "XMODIFIERS=@im=fcitx\n" | sudo tee -a /etc/environment 2>&1 | tee -a >(sed 's/\x1B\[[0-9;]*[JKmsu]//g' >> "$log") &> /dev/null
-    fi
-
-fi
-
 ####################################################################
 
 
@@ -220,16 +196,6 @@ if hostnamectl | grep -q 'Chassis: vm'; then
     cp "$dir/config/hypr/confs/monitor-vbox.conf" "$dir/config/hypr/confs/monitor.conf"
 fi
 
-
-#_____ for nvidia gpu. I don't know if it's gonna work or not. Because I don't have any gpu.
-# uncommenting WLR_NO_HARDWARE_CURSORS if nvidia is detected
-if lspci -k | grep -A 2 -E "(VGA|3D)" | grep -iq nvidia; then
-  msg act "Nvidia GPU detected. Setting up proper env's" 2>&1 | tee -a >(sed 's/\x1B\[[0-9;]*[JKmsu]//g' >> "$log") || true
-  sed -i '/env = WLR_NO_HARDWARE_CURSORS,1/s/^#//' config/hypr/configs/environment.conf
-  sed -i '/env = LIBVA_DRIVER_NAME,nvidia/s/^#//' config/hypr/configs/environment.conf
-  sed -i '/env = __GLX_VENDOR_LIBRARY_NAME,nvidia/s/^# //' config/hypr/configs/environment.conf
-fi
-
 sleep 1
 
 
@@ -242,7 +208,6 @@ cp -r "$dir/config"/* "$HOME/.config/" && sleep 0.5
 if [[ ! -d "$HOME/.local/share/fastfetch" ]]; then
     mv "$HOME/.config/fastfetch" "$HOME/.local/share/"
 fi
-
 
 sleep 1
 
