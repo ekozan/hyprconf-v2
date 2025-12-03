@@ -10,26 +10,6 @@ cyan="\e[1;36m"
 orange="\x1b[38;5;214m"
 end="\e[1;0m"
 
-if command -v gum &> /dev/null; then
-
-display_text() {
-    gum style \
-        --border rounded \
-        --align center \
-        --width 100 \
-        --margin "1" \
-        --padding "1" \
-'
-    __  __                                  ____    _    _____ 
-   / / / /_  ______  ______________  ____  / __/   | |  / /__ \
-  / /_/ / / / / __ \/ ___/ ___/ __ \/ __ \/ /______| | / /__/ /
- / __  / /_/ / /_/ / /  / /__/ /_/ / / / / __/_____/ |/ // __/ 
-/_/ /_/\__, / .___/_/   \___/\____/_/ /_/_/        |___//____/ 
-      /____/_/                                                 
-'
-}
-
-else
 display_text() {
     cat << "EOF"
     __  __                                  ____    _    _____ 
@@ -41,7 +21,6 @@ display_text() {
 
 EOF
 }
-fi
 
 clear && display_text
 printf " \n \n"
@@ -91,6 +70,19 @@ msg() {
     esac
 }
 
+
+install() {
+    local pkg=${1}
+
+    if command -v pacman &> /dev/null; then
+        sudo pacman -S --noconfirm $1
+    elif command -v dnf &> /dev/null; then
+        sudo dnf install $1 -y
+    elif command -v zypper &> /dev/null; then
+        sudo zypper in $1 -y
+    fi
+}
+
 # Need to install 2 packages (gum and parallel)________________________
 installable_pkgs=(
     gum
@@ -105,18 +97,86 @@ installable_fonts=(
     noto-fonts
     noto-fonts-emoji
 )
+_hypr=(
+    hyprland
+    hyprlock
+    hypridle
+    hyprcursor
+    # hyprpolkitagent
+)
 
-install() {
-    local pkg=${1}
+# any other packages will be installed from here
+other_packages=(
+    btop
+    curl
+    dunst
+    fastfetch
+    imagemagick
+    jq
+    konsole
+    kitty
+    kvantum
+    kvantum-qt5
+    less
+    lxappearance
+    mpv-mpris
+    network-manager-applet
+    networkmanager
+    neovim
+    nodejs
+    npm
+    ntfs-3g
+    nvtop
+    nwg-look
+    os-prober
+    pacman-contrib
+    pamixer
+    pavucontrol
+    parallel
+    pciutils
+    polkit-kde-agent
+    power-profiles-daemon
+    python-pywal
+    python-gobject
+    qt5ct
+    qt5-svg
+    qt6ct-kde
+    qt6-svg
+    qt5-graphicaleffects
+    qt5-quickcontrols2
+    ripgrep
+    rofi-wayland
+    satty
+    swaync
+    swww
+    unzip
+    waybar
+    wget
+    wl-clipboard
+    xorg-xrandr
+    yazi
+    zip
+)
 
-    if command -v pacman &> /dev/null; then
-        sudo pacman -S --noconfirm $1
-    elif command -v dnf &> /dev/null; then
-        sudo dnf install $1 -y
-    elif command -v zypper &> /dev/null; then
-        sudo zypper in $1 -y
-    fi
-}
+aur_packages=(
+    cava
+    grimblast-git
+    hyprsunset
+    hyprland-qtutils
+    tty-clock
+    pyprland
+    wlogout
+)
+
+dolphin=(
+    ark
+    crudini
+    dolphin
+    gwenview
+    okular
+)
+
+printf "\n\n"
 
 for pkg in "${installable_pkgs[@]}"; do
     if sudo pacman -Q "$pkg" &> /dev/null || rpm -q "$pkg" &> /dev/null || sudo zypper se -i "$pkg" &> /dev/null; then
@@ -126,6 +186,17 @@ for pkg in "${installable_pkgs[@]}"; do
         install "$pkg" &> /dev/null
     fi
 done
+
+for _pkgs in  "${installable_fonts[@]}" "${_hypr[@]}" "${other_packages[@]}" "${aur_packages[@]}" "${dolphin[@]}"; do
+    install_package "$_pkgs"
+    if sudo pacman -Q "$_pkgs" &>/dev/null; then
+        echo "[ DONE ] - $_pkgs was installed successfully!\n" 2>&1 | tee -a "$log" &>/dev/null
+    else
+        echo "[ ERROR ] - Sorry, could not install $_pkgs!\n" 2>&1 | tee -a "$log" &>/dev/null
+    fi
+done
+
+
 
 sleep 2 && clear
 
