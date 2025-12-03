@@ -84,6 +84,11 @@ install() {
 }
 aur_helper=$(command -v yay || command -v paru) # find the aur helper
 
+sudo pacman -S --needed git base-devel
+git clone https://aur.archlinux.org/yay-bin.git
+cd yay-bin
+makepkg -si
+
 # skip already insalled packages
 skip_installed() {
 
