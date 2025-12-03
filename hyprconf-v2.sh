@@ -1,15 +1,17 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# color defination
+# ========= Couleurs ========= #
 red="\e[1;31m"
 green="\e[1;32m"
 yellow="\e[1;33m"
 blue="\e[1;34m"
-megenta="\e[1;1;35m"
+magenta="\e[1;35m"
 cyan="\e[1;36m"
 orange="\x1b[38;5;214m"
-end="\e[1;0m"
+end="\e[0m"
 
+# ========= ASCII Art ========= #
 display_text() {
     cat << "EOF"
     __  __                                  ____    _    _____ 
@@ -23,100 +25,67 @@ EOF
 }
 
 clear && display_text
-printf " \n \n"
+printf "\n\n"
 
-###------ Startup ------###
-
-### === Chemins & log ===========================================
+# ========= Log ========= #
 dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 log_dir="$dir/Logs"
 log="$log_dir/hyprconf-v2.log"
 mkdir -p "$log_dir"
 touch "$log"
 
-### === Couleurs (adapte si tu les as déjà ailleurs) ============
-green='\033[0;32m'
-orange='\033[0;33m'
-cyan='\033[0;36m'
-yellow='\033[1;33m'
-blue='\033[0;34m'
-magenta='\033[0;35m'
-red='\033[0;31m'
-end='\033[0m'
-
-### === Messages =================================================
+# ========= Messages ========= #
 msg() {
     local actn=$1
-    local msg=$2
+    local txt=$2
 
     case $actn in
-        act) printf "${green}=>${end} %s\n" "$msg" ;;
-        ask) printf "${orange}??${end} %s\n" "$msg" ;;
-        dn)  printf "${cyan}::${end} %s\n\n" "$msg" ;;
-        att) printf "${yellow}!!${end} %s\n" "$msg" ;;
-        nt)  printf "${blue}\$\$${end} %s\n" "$msg" ;;
-        skp) printf "${magenta}[ SKIP ]${end} %s\n" "$msg" ;;
+        act) printf "${green}=>${end} %s\n" "$txt" ;;
+        ask) printf "${orange}??${end} %s\n" "$txt" ;;
+        dn)  printf "${cyan}::${end} %s\n\n" "$txt" ;;
+        att) printf "${yellow}!!${end} %s\n" "$txt" ;;
+        nt)  printf "${blue}\$\$${end} %s\n" "$txt" ;;
+        skp) printf "${magenta}[ SKIP ]${end} %s\n" "$txt" ;;
         err)
-            printf "${red}>< Ohh sheet! an error..${end}\n   %s\n" "$msg"
+            printf "${red}>< Ohh sheet! an error..${end}\n   %s\n" "$txt"
             sleep 1
             ;;
-        *) printf "%s\n" "$msg" ;;
+        *) printf "%s\n" "$txt" ;;
     esac
 }
 
-### === Détection du gestionnaire de paquets =====================
-PKG_MGR=""
-if command -v pacman &>/dev/null; then
-    PKG_MGR="pacman"
-elif command -v dnf &>/dev/null; then
-    PKG_MGR="dnf"
-elif command -v zypper &>/dev/null; then
-    PKG_MGR="zypper"
-else
-    msg err "Aucun gestionnaire de paquets supporté trouvé (pacman/dnf/zypper)."
+# ========= Vérification Arch / pacman ========= #
+if ! command -v pacman &>/dev/null; then
+    msg err "Ce script est Arch-only et nécessite pacman."
     exit 1
 fi
 
-### === AUR helper (Arch seulement) =============================
-aur_helper=""
+# ========= AUR helper (yay) ========= #
+aur_helper="$(command -v yay || true)"
 
-if [[ "$PKG_MGR" == "pacman" ]]; then
-    aur_helper="$(command -v yay || command -v paru || true)"
-
-    if [[ -z "$aur_helper" ]]; then
-        msg act "Installation de yay (AUR helper)..."
-        sudo pacman -S --needed --noconfirm git base-devel
-        tmp_dir="$(mktemp -d)"
-        git clone https://aur.archlinux.org/yay-bin.git "$tmp_dir/yay-bin"
-        cd "$tmp_dir/yay-bin"
-        makepkg -si --noconfirm
-        cd - >/dev/null
-        aur_helper="$(command -v yay || command -v paru || true)"
-    fi
+if [[ -z "$aur_helper" ]]; then
+    msg act "Installation de yay (AUR helper)..."
+    sudo pacman -S --needed --noconfirm git base-devel
+    tmp_dir="$(mktemp -d)"
+    git clone https://aur.archlinux.org/yay-bin.git "$tmp_dir/yay-bin"
+    cd "$tmp_dir/yay-bin"
+    makepkg -si --noconfirm
+    cd - >/dev/null
+    aur_helper="$(command -v yay || true)"
 fi
 
-### === Fonctions utilitaires ====================================
+if [[ -z "$aur_helper" ]]; then
+    msg err "Impossible d'installer ou de trouver yay."
+    exit 1
+fi
+
+# ========= Fonctions utilitaires ========= #
 is_installed() {
     local pkg="$1"
-
-    case "$PKG_MGR" in
-        pacman)
-            # on teste d'abord pacman, puis éventuellement l’aur helper
-            if pacman -Q "$pkg" &>/dev/null; then
-                return 0
-            fi
-            if [[ -n "$aur_helper" ]] && "$aur_helper" -Q "$pkg" &>/dev/null; then
-                return 0
-            fi
-            ;;
-        dnf)
-            rpm -q "$pkg" &>/dev/null && return 0
-            ;;
-        zypper)
-            zypper se -i "$pkg" 2>/dev/null | grep -q "^i. *$pkg" && return 0
-            ;;
-    esac
-
+    # yay -Q gère repo + AUR
+    if "$aur_helper" -Q "$pkg" &>/dev/null; then
+        return 0
+    fi
     return 1
 }
 
@@ -129,24 +98,7 @@ install_pkg() {
     fi
 
     msg act "Installation de $pkg..."
-
-    case "$PKG_MGR" in
-        pacman)
-            if [[ -n "$aur_helper" ]]; then
-                "$aur_helper" -S --noconfirm "$pkg" >/dev/null 2>&1 || true
-            else
-                sudo pacman -S --noconfirm "$pkg" >/dev/null 2>&1 || true
-            fi
-            ;;
-        dnf)
-            sudo dnf install -y "$pkg" >/dev/null 2>&1 || true
-            ;;
-        zypper)
-            sudo zypper in -y "$pkg" >/dev/null 2>&1 || true
-            ;;
-    esac
-
-    if is_installed "$pkg"; then
+    if "$aur_helper" -S --noconfirm "$pkg" >/dev/null 2>&1; then
         msg dn "$pkg a été installé avec succès !"
         printf "[ DONE ] - %s was installed successfully!\n" "$pkg" | tee -a "$log" >/dev/null
     else
@@ -155,8 +107,7 @@ install_pkg() {
     fi
 }
 
-### === Listes de paquets ========================================
-
+# ========= Listes de paquets ========= #
 installable_pkgs=(
     gum
     parallel
@@ -205,7 +156,7 @@ other_packages=(
     pacman-contrib
     pamixer
     pavucontrol
-    parallel        # doublon géré par la dédup plus bas
+    parallel        # doublon géré par la dédup
     pciutils
     polkit-kde-agent
     power-profiles-daemon
@@ -249,11 +200,9 @@ dolphin=(
     okular
 )
 
-### === Installation ==============================================
-
+# ========= Installation des paquets ========= #
 printf "\n\n"
 
-# On fusionne tout dans une seule liste
 all_pkgs=(
     "${installable_pkgs[@]}"
     "${installable_fonts[@]}"
@@ -263,10 +212,8 @@ all_pkgs=(
     "${dolphin[@]}"
 )
 
-# Déduplication pour éviter les installations doubles
 declare -A seen
 for pkg in "${all_pkgs[@]}"; do
-    # si déjà vu, on skip
     if [[ -n "${seen[$pkg]:-}" ]]; then
         continue
     fi
@@ -274,16 +221,20 @@ for pkg in "${all_pkgs[@]}"; do
     install_pkg "$pkg"
 done
 
-msg dn "Toutes les installations sont terminées."
+msg dn "Toutes les installations de paquets sont terminées."
 sleep 2 && clear
-# Directories ----------------------------
+
+# ========= Directories & variables ========= #
 hypr_dir="$HOME/.config/hypr"
 scripts_dir="$hypr_dir/scripts"
 fonts_dir="$HOME/.local/share/fonts"
 
-msg act "Now setting up the pre installed Hyprland configuration..."sleep 1
+msg act "Now setting up the pre installed Hyprland configuration..."
+sleep 1
 
-mkdir -p ~/.config
+mkdir -p "$HOME/.config"
+backup_dir="$HOME/.config/backup_hyprconfV2-${USER}"
+
 dirs=(
     btop
     fastfetch
@@ -311,37 +262,32 @@ dirs=(
     kwallertc
 )
 
-
-# if some main directories exists, backing them up.
-if [[ -d "$HOME/.config/backup_hyprconfV2-${USER}" ]]; then
-    msg att "a backup_hyprconfV2-${USER} directory was there. Archiving it..."
+# ========= Backup configs ========= #
+if [[ -d "$backup_dir" ]]; then
+    msg att "$backup_dir existe déjà. Archivage..."
     cd "$HOME/.config"
-    mkdir -p "archive_hyprconfV2-${USER}"
-    tar -czf "archive_hyprconfV2-${USER}/backup_hyprconfV2-$(date +%d-%m-%Y_%I-%M-%p)-${USER}.tar.gz" "backup_hyprconfV2-${USER}" &> /dev/null
+    archive_dir="archive_hyprconfV2-${USER}"
+    mkdir -p "$archive_dir"
+    tar -czf "${archive_dir}/backup_hyprconfV2-$(date +%d-%m-%Y_%H-%M)-${USER}.tar.gz" "backup_hyprconfV2-${USER}" &>/dev/null
     rm -rf "backup_hyprconfV2-${USER}"
-    msg dn "backup_hyprconfV2-${USER} was archived inside archive_hyprconfV2-${USER} directory..." && sleep 1
+    msg dn "backup_hyprconfV2-${USER} a été archivé dans $archive_dir."
 fi
 
+mkdir -p "$backup_dir"
 for confs in "${dirs[@]}"; do
-    mkdir -p "$HOME/.config/backup_hyprconfV2-${USER}"
     dir_path="$HOME/.config/$confs"
     if [[ -d "$dir_path" || -f "$dir_path" ]]; then
-        mv "$dir_path" "$HOME/.config/backup_hyprconfV2-${USER}/" 2>&1 | tee -a "$log"
+        mv "$dir_path" "$backup_dir/" 2>&1 | tee -a "$log"
     fi
 done
 
-[[ -d "$HOME/.config/backup_hyprconfV2-${USER}/hypr" ]] && msg dn "Everything has been backuped in $HOME/.config/backup_hyprconfV2-${USER}..."
-
+[[ -d "$backup_dir/hypr" ]] && msg dn "Tout a été sauvegardé dans $backup_dir."
 sleep 1
 
-####################################################################
-
-
-#_____ for virtual machine
-# Check if the configuration is in a virtual box
+# ========= Virtual Machine tweaks ========= #
 if hostnamectl | grep -q 'Chassis: vm'; then
-    msg att "You are using this script in a Virtual Machine..."
-    msg act "Setting up things for you..." 
+    msg att "Vous utilisez ce script dans une machine virtuelle..."
+    msg act "Adaptation de la configuration pour VM..."
     sed -i '/env = WLR_NO_HARDWARE_CURSORS,1/s/^#//' "$dir/config/hypr/confs/env.conf"
     sed -i '/env = WLR_RENDERER_ALLOW_SOFTWARE,1/s/^#//' "$dir/config/hypr/confs/env.conf"
     mv "$dir/config/hypr/confs/monitor.conf" "$dir/config/hypr/confs/monitor-back.conf"
@@ -350,111 +296,116 @@ fi
 
 sleep 1
 
-
-#####################################################
-# cloning the dotfiles repository into ~/.config/hypr
-#####################################################
-
+# ========= Copie des configs ========= #
 mkdir -p "$HOME/.config"
 cp -r "$dir/config"/* "$HOME/.config/" && sleep 0.5
-if [[ ! -d "$HOME/.local/share/fastfetch" ]]; then
+
+if [[ ! -d "$HOME/.local/share/fastfetch" ]] && [[ -d "$HOME/.config/fastfetch" ]]; then
     mv "$HOME/.config/fastfetch" "$HOME/.local/share/"
 fi
 
 sleep 1
 
 if [[ -d "$scripts_dir" ]]; then
-    # make all the scripts executable...
     chmod +x "$scripts_dir"/* 2>&1 | tee -a "$log"
-    chmod +x "$HOME/.config/fish/functions"/* 2>&1 | tee -a "$log"
-    msg dn "All the necessary scripts have been executable..."
+    if [[ -d "$HOME/.config/fish/functions" ]]; then
+        chmod +x "$HOME/.config/fish/functions"/* 2>&1 | tee -a "$log"
+    fi
+    msg dn "Tous les scripts nécessaires ont été rendus exécutables."
     sleep 1
 else
-    msg err "Could not find necessary scripts.."
+    msg err "Impossible de trouver les scripts Hyprland nécessaires..."
 fi
 
-# Install Fonts
-msg act "Installing some fonts..."
-if [[ ! -d "$fonts_dir" ]]; then
-	mkdir -p "$fonts_dir"
-fi
-
+# ========= Fonts ========= #
+msg act "Installation des fonts..."
+mkdir -p "$fonts_dir"
 cp -r "$dir/extras/fonts" "$fonts_dir"
-msg act "Updating font cache..."
-sudo fc-cache -fv 2>&1 | tee -a "$log" &> /dev/null
+msg act "Mise à jour du cache de fonts..."
+fc-cache -fv 2>&1 | tee -a "$log" >/dev/null
 
-# Setup dolphin files
+# ========= Dolphin ========= #
 if [[ -f "$HOME/.local/state/dolphinstaterc" ]]; then
     mv "$HOME/.local/state/dolphinstaterc" "$HOME/.local/state/dolphinstaterc.back"
+fi
+
+if [[ -f "$dir/extras/dolphinstaterc" ]]; then
+    mkdir -p "$HOME/.local/state"
     cp "$dir/extras/dolphinstaterc" "$HOME/.local/state/"
 fi
 
-
+# ========= Session Wayland ========= #
 wayland_session_dir=/usr/share/wayland-sessions
-if [ -d "$wayland_session_dir" ]; then
-    msg att "$wayland_session_dir found..."
+if [[ -d "$wayland_session_dir" ]]; then
+    msg att "$wayland_session_dir trouvé..."
 else
-    msg att "$wayland_session_dir NOT found, creating..."
-    sudo mkdir $wayland_session_dir 2>&1 | tee -a "$log"
-    sudo cp "$dir/extras/hyprland.desktop" /usr/share/wayland-sessions/ 2>&1 | tee -a "$log"
+    msg att "$wayland_session_dir non trouvé, création..."
+    sudo mkdir -p "$wayland_session_dir" 2>&1 | tee -a "$log"
 fi
 
+sudo cp "$dir/extras/hyprland.desktop" "$wayland_session_dir/" 2>&1 | tee -a "$log"
 
-############################################################
-# setting theme
-###########################################################
-# setting up the waybar
+# ========= Thèmes & liens ========= #
+# waybar
 ln -sf "$HOME/.config/waybar/configs/full-top" "$HOME/.config/waybar/config"
 ln -sf "$HOME/.config/waybar/style/full-top.css" "$HOME/.config/waybar/style.css"
 
+# thème courant
 themeFile="$HOME/.config/hypr/.cache/.theme"
-touch "$themeFile" && echo "Catppuccin" > "$themeFile"
+mkdir -p "$(dirname "$themeFile")"
+echo "Catppuccin" > "$themeFile"
 
-"$HOME/.config/config/hypr/scripts/Wallpaper.sh" &> /dev/null
+# scripts de wallpaper & refresh
+if [[ -x "$HOME/.config/hypr/scripts/Wallpaper.sh" ]]; then
+    "$HOME/.config/hypr/scripts/Wallpaper.sh" &>/dev/null
+fi
 
-# hyprland themes
 hyprTheme="$HOME/.config/hypr/confs/themes/Catppuccin.conf"
 ln -sf "$hyprTheme" "$HOME/.config/hypr/confs/decoration.conf"
 
-# rofi themes
+# rofi
 rofiTheme="$HOME/.config/rofi/colors/Catppuccin.rasi"
 ln -sf "$rofiTheme" "$HOME/.config/rofi/themes/rofi-colors.rasi"
 
-# Kitty themes
+# kitty
 kittyTheme="$HOME/.config/kitty/colors/Catppuccin.conf"
 ln -sf "$kittyTheme" "$HOME/.config/kitty/theme.conf"
 
-# Apply new colors dynamically
-kill -SIGUSR1 $(pidof kitty)
+# reload kitty si lancé
+pkill -USR1 kitty 2>/dev/null || true
 
-# waybar themes
+# waybar theme couleur
 waybarTheme="$HOME/.config/waybar/colors/Catppuccin.css"
 ln -sf "$waybarTheme" "$HOME/.config/waybar/style/theme.css"
 
-# wlogout themes
+# wlogout
 wlogoutTheme="$HOME/.config/wlogout/colors/Catppuccin.css"
 ln -sf "$wlogoutTheme" "$HOME/.config/wlogout/colors.css"
 
-# set swaync colors
+# swaync
 swayncTheme="$HOME/.config/swaync/colors/Catppuccin.css"
 ln -sf "$swayncTheme" "$HOME/.config/swaync/colors.css"
 
-# Setting VS Code extension based on theme selection
+# VS Code
 settingsFile="$HOME/.config/Code/User/settings.json"
-[[ -d "$settingsFile" ]] && sed -i "s|\"workbench.colorTheme\": \".*\"|\"workbench.colorTheme\": \"Catppuccin Mocha\"|" "$settingsFile"
+if [[ -f "$settingsFile" ]]; then
+    sed -i 's|"workbench.colorTheme": ".*"|"workbench.colorTheme": "Catppuccin Mocha"|' "$settingsFile"
+fi
 
-# setting qt theme
-crudini --set "$HOME/.config/Kvantum/kvantum.kvconfig" General theme "Catppuccin"
-crudini --set ~/.config/kdeglobals Icons Theme "Tela-circle-dracula"
+# Kvantum / icons
+crudini --set "$HOME/.config/Kvantum/kvantum.kvconfig" General theme "Catppuccin" || true
+crudini --set "$HOME/.config/kdeglobals" Icons Theme "Tela-circle-dracula" || true
 
-"$HOME/.config/hypr/scripts/wallcache.sh" &> /dev/null
-"$HOME/.config/config/hypr/scripts/Refresh.sh" &> /dev/null
+# cache & refresh Hypr
+if [[ -x "$HOME/.config/hypr/scripts/wallcache.sh" ]]; then
+    "$HOME/.config/hypr/scripts/wallcache.sh" &>/dev/null
+fi
+if [[ -x "$HOME/.config/hypr/scripts/Refresh.sh" ]]; then
+    "$HOME/.config/hypr/scripts/Refresh.sh" &>/dev/null
+fi
 
-#############################################
-# setting lock screen
-#############################################
+# lockscreen
 ln -sf "$HOME/.config/hypr/lockscreens/hyprlock-1.conf" "$HOME/.config/hypr/hyprlock.conf"
 
-msg dn "Script execution was successful! Now logout and log back in and enjoy your hyprland..." && sleep 1
-
+msg dn "Script execution was successful! Now logout and log back in and enjoy your hyprland..."
 # === ___ Script Ends Here ___ === #
